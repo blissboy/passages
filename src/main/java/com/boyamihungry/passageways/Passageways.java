@@ -5,6 +5,7 @@ import processing.core.PApplet;
 import processing.core.PFont;
 
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 /**
@@ -62,6 +63,18 @@ public class Passageways extends PApplet implements ControlListener {
     private List<ValueSetter> currentValueSetters = new ArrayList<>();
     // herehere need to create value setters for each variable for both the slider and oscil states
 
+    /* thoughts on structure of control groups
+    - have list of controls that are visible per state
+    - likely have two states, could be more complex
+    - have functions that are run depending on state
+        - example, if state is "use oscillator, fields are set in different way, if state is "use slider", different way
+    - possible implementations
+        - Map<String (state),
+              Map<String (functionType like "turn on fields", "show components", "do everything"),
+                  Callable<String (@nullable stateChange)>>
+     */
+    private Map<String, Map<String,Callable<String>>> stateMap = new HashMap<>();
+    private Set<String> activeStates = new HashSet<>();
 
     private Map<String,Oscillator> ui_oscillators = new HashMap<>();
     static final String NEW_OSCILLATOR = "Create new...";
