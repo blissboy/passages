@@ -18,8 +18,15 @@ public interface StateEngine {
         - Map<String (state),
               Map<String (functionType like "turn on fields", "show components", "do everything"),
                   Callable<String (@nullable stateChange)>>
+    - the state functions which need to be run could be further broken down than jsut being Callable into classifications.
+       - UI (meaning what is being presented as output)
+       - render (meaning how calculations are made that likely affect UI)
+       - control state (meaning  how external input is allowed / connected)
+       - control interface (showing how control is currently afforded)
+
+
      */
-    Map<String, Map<String,Callable<Optional<List<StateChange>>>>> stateMap = new HashMap<>();
+    Map<String, Set<Callable<Optional<Set<StateChange>>>>> stateMap = new HashMap<>();
     Set<String> activeStates = new HashSet<>();
 
 
@@ -28,16 +35,21 @@ public interface StateEngine {
      * @param changes
      * @return an optional list of names of invoked states. Note that
      */
-    Optional<List<StateChange>> processStateChange(List<StateChange> changes);
+    Optional<Set<StateChange>> processStateChange(Set<StateChange> changes);
 
-    Optional<List<StateChange>> processStateChange(StateChange change);
+    Optional<Set<StateChange>> processStateChange(StateChange change);
+
+    /**
+     * Sets or replaces the definition of a state.
+     * @param stateName
+     * @param stateMethods a map of <code>Callable</code> keyed by a String
+     */
+    void setStateDefinition(String stateName, Set<Callable<Optional<Set<StateChange>>>> stateMethods);
 
     /**
      *
-     * @param stateName
-     * @param activateMethod
      */
-    void addState(String stateName, Map<String, Callable<String>> activateMethod);
+    void addToStateDefinition(String stateName, Callable<Optional<Set<StateChange>>> methodToAdd);
 
     class StateChange {
         public final String stateName;
@@ -53,4 +65,21 @@ public interface StateEngine {
         ACTIVE,
         INACTIVE;
     }
+
+    enum StateCategory {
+/*
+       - UI (meaning what is being presented as output)
+       - render (meaning how calculations are made that likely affect UI)
+       - control state (meaning  how external input is allowed / connected)
+       - control interface (showing how control is currently afforded)
+
+ */
+
+        RENDER,
+        CONTROL_STATE,
+        CONTROL_INTERFACE,
+        OUTPUT_CONTROL,
+        UNCATEGORIZED
+    }
+
 }

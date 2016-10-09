@@ -7,15 +7,18 @@ import java.util.function.Function;
  */
 public interface Oscillator {
 
+    static final float DEFAULT_FREQUENCY = 60000f;
     public String getDescription();
 
-    public int getFrequency();
+    public float getFrequency();
 
+    /**
+     * Gives a value between -1 and 1.
+     * @return
+     */
     public float getValue();
 
     default Object getComputedValue(Function<Float,Object> computation) {
         return computation.apply(getValue());
     }
-
-
 }

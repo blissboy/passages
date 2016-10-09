@@ -25,17 +25,20 @@ public class Passageways extends PApplet implements ControlListener {
     private int frameStroke = 0;
     private int frameStrokeWeight = 4;
 
+    // variables that control what happens as output
+    private Float exitSize = 100f;
+
+
     /////// control panel whatnot ///////
-    private int ui_unknownExitRadius = 100;
-    private int ui_fromExitSize = 1;
-    private int ui_toExitSize = 300;
-    private int ui_myWorldRadius = 1000;
-    private int ui_depthOfPassage = 300;
-    private int ui_wallSwirlCount = 255;
-    private int ui_wallSwirlRadius = 225;
-    private int ui_depthLayers = 5;
-    private int ui_g_offset = 50;
-    private int ui_b_offset = 50;
+    private float ui_fromExitSizeInitial = 1;
+    private float ui_toExitSizeInitial = 300;
+    private float ui_myWorldRadius = 1000;
+    private float ui_depthOfPassage = 300;
+    private float ui_wallSwirlCount = 255;
+    private float ui_wallSwirlRadius = 225;
+    private float ui_depthLayers = 5;
+    private float ui_g_offset = 50;
+    private float ui_b_offset = 50;
 
     private boolean ui_exitSize = false;
 
@@ -58,6 +61,11 @@ public class Passageways extends PApplet implements ControlListener {
     private int ui_sys_oscillators_y_location = 0; //bleh
     private boolean ui_sys_readyForOperation;
 
+    //BasicStateEngine stateEngine = new BasicStateEngine();
+
+    private Map<String,Callable<Optional<List<StateEngine.StateChange>>>> oncePerFrameMethods = new HashMap<>();
+
+
     private Map<String, Set<Controller>> ui_controlGroups = new HashMap<>();
     private Map<String, List<ValueSetter>> groupValueSetters = new HashMap<>();
     private List<ValueSetter> currentValueSetters = new ArrayList<>();
@@ -72,8 +80,12 @@ public class Passageways extends PApplet implements ControlListener {
         - Map<String (state),
               Map<String (functionType like "turn on fields", "show components", "do everything"),
                   Callable<String (@nullable stateChange)>>
+         ----- changed to just be
+        - Map<String (state), Callable<String (@nullable stateChange)>>
+
+
      */
-    private Map<String, Map<String,Callable<String>>> stateMap = new HashMap<>();
+    private Map<String, Callable<Optional<List<StateEngine.StateChange>>>> stateMap = new HashMap<>();
     private Set<String> activeStates = new HashSet<>();
 
     private Map<String,Oscillator> ui_oscillators = new HashMap<>();
@@ -82,6 +94,11 @@ public class Passageways extends PApplet implements ControlListener {
     static final String UI_VAL_FROM = "ui_valFrom_";
     static final String UI_VAL_TO = "ui_valTo_";
     static final String UI_TOGGLE = "ui_tog_";
+
+    static final String UI_OSC_NAME = "ui_osc_name_";
+    static final String UI_OSC_FREQ_VAL = "ui_osc_freq_val";
+    static final String UI_OSC_FREQ_LABEL = "ui_osc_freq_label";
+
     private ControlP5 cp5;
 
 
@@ -94,7 +111,27 @@ public class Passageways extends PApplet implements ControlListener {
     public void setup() {
 
         ui_sys_readyForOperation = false;
-        ui_oscillators.put("osc 0", new SinusoidalOscillator(6000));
+        ui_oscillators.put("osc 0", new SinusoidalOscillator(
+                () -> {
+                    Float value;
+                    try {
+                        System.out.print("getting value-pre");
+                        Textfield oscFreq = (Textfield) cp5.get(UI_OSC_FREQ_VAL + "osc 0");
+                        if ( null != oscFreq ) {
+                            value = Float.valueOf(oscFreq.getText());
+                        } else {
+                            System.out.print(" - null textfield - ");
+                            value = Oscillator.DEFAULT_FREQUENCY;
+                        }
+                        return value;
+                    } catch (NumberFormatException nfE) {
+                        nfE.printStackTrace();
+                        value = Oscillator.DEFAULT_FREQUENCY;
+                    }
+                    System.out.println("\tgot value: freq = " + value);
+                    return value;
+                }
+        ));
         ui_oscillators.put("osc 1", new SinusoidalOscillator(6000));
         arialNar12 = createFont("ArialNarrow", 12);
         arialNar16 = createFont("ArialNarrow", 16);
@@ -115,25 +152,31 @@ public class Passageways extends PApplet implements ControlListener {
 
 
     public void draw() {
-
+        oncePerFrameMethods.values().stream().forEach(c -> {
+            try {
+                c.call();
+            } catch (Exception e ) {
+                throw new RuntimeException(e);
+            }
+        });
         background(128);
         pushMatrix();
-        translate(width/2, height/2);
+        translate(width / 2, height / 2);
         pushStyle();
 
         stroke(255);
         strokeWeight(3f);
 
         // exit
-        ellipse(0,0,ui_unknownExitRadius * 2, ui_unknownExitRadius * 2);
+        ellipse(0, 0, exitSize * 2, exitSize * 2);
 
         // worldradius
         noFill();
-        ellipse(0,0,ui_myWorldRadius,ui_myWorldRadius);
+        ellipse(0, 0, ui_myWorldRadius, ui_myWorldRadius);
 
         strokeWeight(1f);
 
-        float r = ui_myWorldRadius - ui_unknownExitRadius;
+        float r = ui_myWorldRadius - exitSize;
         float rStep = r / (ui_depthLayers + 1);
         int adornmentCount;
 
@@ -141,20 +184,20 @@ public class Passageways extends PApplet implements ControlListener {
 
 
         // layers
-        for ( int layerCount=0; layerCount<ui_depthLayers; layerCount++) {
+        for (int layerCount = 0; layerCount < ui_depthLayers; layerCount++) {
             adornmentCount = 0;
             theta = 0;
 
             do {
-                ellipse(((ui_unknownExitRadius / 2) + (rStep * layerCount) ) * cos(theta),
-                        ((ui_unknownExitRadius / 2) + (rStep * layerCount) ) * sin(theta),
+                ellipse(((exitSize / 2) + (rStep * layerCount)) * cos(theta),
+                        ((exitSize / 2) + (rStep * layerCount)) * sin(theta),
                         ui_wallSwirlRadius,
                         ui_wallSwirlRadius);
-                theta = theta + ((2f * PI) / ((float)ui_wallSwirlCount/(float)ui_depthLayers));
+                theta = theta + ((2f * PI) / ((float) ui_wallSwirlCount / (float) ui_depthLayers));
 
                 adornmentCount++;
 
-            } while (adornmentCount < (ui_wallSwirlCount / ui_depthLayers ));
+            } while (adornmentCount < (ui_wallSwirlCount / ui_depthLayers));
 
         }
 
@@ -173,14 +216,15 @@ public class Passageways extends PApplet implements ControlListener {
 
     void setupControlPanel() {
 
-        int controlCount = 0;
-
         cp5 = new ControlP5(this);
 
-
         int currentX = ui_sys_margin;
+        int controlCount = 0;
 
-        cp5.addToggle(UI_TOGGLE + "ui_exitSize")
+        // --------------------------------
+        // ---- exit size
+        String varName = "exitSize";
+        cp5.addToggle(UI_TOGGLE + varName)
                 .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * ++controlCount)
                 .setSize(ui_sys_toggleWidth, ui_sys_controlHeight)
                 .setValue(ui_exitSize)
@@ -191,29 +235,27 @@ public class Passageways extends PApplet implements ControlListener {
                 .setSize(ui_sys_labelWidth, ui_sys_controlHeight)
                 .setFont(arialNar16);
         currentX += ui_sys_labelWidth;
-        ControlP5Helper.addControlToGroup( UI_TOGGLE + "ui_exitSize-false",
-                cp5.addSlider("ui_unknownExitRadius")
+        ControlP5Helper.addControlToGroup( varName + "-false",
+                cp5.addSlider(varName)
                         .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * controlCount)
                         .setSize(ui_sys_sliderWidth, ui_sys_controlHeight)
                         .setRange(1, 100)
-                        .setValue(ui_unknownExitRadius)
+                        .setValue(exitSize)
                         .setLabelVisible(false)
                         .setVisible(!ui_exitSize),
                 ui_controlGroups);
 
-
-
         // don't update currentX, stay in the same place
-        ControlP5Helper.addControlToGroup( UI_TOGGLE + "ui_exitSize-true",
-                cp5.addTextfield("ui_fromExitSize")
+        ControlP5Helper.addControlToGroup(varName + "-true",
+                cp5.addTextfield(UI_VAL_FROM + varName)
                         .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * controlCount)
                         .setSize(ui_sys_textFieldWidth, ui_sys_controlHeight)
-                        .setValue(ui_fromExitSize)
+                        .setValue(ui_fromExitSizeInitial)
                         .setLabel("")  // setting label non-visible does not work
                         .setVisible(ui_exitSize),
                 ui_controlGroups);
         currentX += ui_sys_textFieldWidth;
-        ControlP5Helper.addControlToGroup( UI_TOGGLE + "ui_exitSize-true",
+        ControlP5Helper.addControlToGroup(varName + "-true",
                 cp5.addLabel("to")
                         .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * controlCount)
                         .setSize(ui_sys_toLabelWidth, ui_sys_controlHeight)
@@ -221,18 +263,18 @@ public class Passageways extends PApplet implements ControlListener {
                         .setVisible(ui_exitSize),
                 ui_controlGroups);
         currentX += ui_sys_toLabelWidth;
-        ControlP5Helper.addControlToGroup(  UI_TOGGLE + "ui_exitSize-true",
-                cp5.addTextfield("ui_toExitSize")
+        ControlP5Helper.addControlToGroup(varName + "-true",
+                cp5.addTextfield(UI_VAL_TO + varName)
                         .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * controlCount)
                         .setSize(ui_sys_textFieldWidth, ui_sys_controlHeight)
-                        .setValue(ui_toExitSize)
+                        .setValue(ui_toExitSizeInitial)
                         .setLabel("")  // setting label non-visible does not work
                         .setVisible(ui_exitSize),
                 ui_controlGroups);
         currentX += ui_sys_textFieldWidth + ui_sys_margin;
 
-        ControlP5Helper.addControlToGroup( UI_TOGGLE + "ui_exitSize-true",
-                cp5.addScrollableList(UI_OSCIL_SELECTOR + "exitSize")
+        ControlP5Helper.addControlToGroup(varName + "-true",
+                cp5.addScrollableList(UI_OSCIL_SELECTOR + varName)
                         .setPosition(currentX, (ui_sys_margin + ui_sys_controlHeight) * controlCount)
                         .setSize(ui_sys_dropdownWidth, ui_sys_dropdown_height)
                         .setBarHeight(ui_sys_controlHeight)
@@ -246,6 +288,8 @@ public class Passageways extends PApplet implements ControlListener {
                         .bringToFront(),
                 ui_controlGroups);
 
+        // --------------------------------
+        // ---- world radius
         cp5.addLabel("World radius")
                 .setPosition(ui_sys_margin, (ui_sys_margin + ui_sys_controlHeight) * ++controlCount)
                 .setSize(ui_sys_labelWidth, ui_sys_controlHeight)
@@ -316,6 +360,9 @@ public class Passageways extends PApplet implements ControlListener {
                 .setRange(1, 100)
                 .setValue(ui_b_offset);
 
+        //createControlGroupStates(ui_controlGroups);
+
+
         controlCount++;
         ui_sys_oscillators_y_location = (ui_sys_margin + ui_sys_controlHeight) * ++controlCount;
         // Display oscillators
@@ -324,42 +371,57 @@ public class Passageways extends PApplet implements ControlListener {
     }
 
 
-
+    /**
+     * Draws the avail oscillators at a point
+     * @param x
+     * @param y
+     */
     private void drawOscillatorsUI(int x, int y) {
 
-        int currentX = x;
-        int currentY = y;
-        int oscCount = 0;
+        if ( true) {
+            int currentX = x;
+            int currentY = y;
+            int oscCount = 0;
 
-        for ( String key : ui_oscillators.keySet() ) {
-            if (!NEW_OSCILLATOR.equals(key)) {
+            for (String key : ui_oscillators.keySet()) {
+                if (!NEW_OSCILLATOR.equals(key)) {
 
-                currentX = x;
-                cp5.addTextarea("ui_osc_name_" + key)    // todo: make constant
-                        .setPosition(currentX + ui_sys_margin, currentY)
-                        .setSize(ui_sys_nameField_width, ui_sys_controlHeight)
-                        .setText(key)
-                        .setFont(arial14);
-                currentX += ui_sys_margin + ui_sys_nameField_width;
-                cp5.addLabel("oscFreq" + key)
-                        .setPosition(currentX + ui_sys_margin, currentY)
-                        .setSize(ui_sys_labelWidth, ui_sys_controlHeight)
-                        .setText("frequency");
-                currentX += ui_sys_labelWidth + ui_sys_margin;
-                cp5.addTextarea("ui_osc_freq_" + key)    // todo: make constant
-                        .setPosition(currentX + ui_sys_margin, currentY)
-                        .setSize(ui_sys_textFieldWidth, ui_sys_controlHeight)
-                        .setText(String.valueOf(ui_oscillators.get(key).getFrequency()))
-                        .setFont(arial14);
-                System.out.println("@#$@#$@#$@#$@#$@#$@#$@# " + ui_oscillators.get(key).getFrequency());
-                currentX += ui_sys_margin + ui_sys_textFieldWidth;
+                    currentX = x;
+                    Textarea name = cp5.get(Textarea.class, UI_OSC_NAME + key);
+                    if (null == name) {
+                        name = cp5.addTextarea(UI_OSC_NAME + key);
+                    }
+                    name.setPosition(currentX + ui_sys_margin, currentY)
+                            .setSize(ui_sys_nameField_width, ui_sys_controlHeight)
+                            .setText(key)
+                            .setFont(arial14);
+                    currentX += ui_sys_margin + ui_sys_nameField_width;
 
-                currentY += ui_sys_margin + ui_sys_controlHeight;
+                    Textlabel label = cp5.get(Textlabel.class, UI_OSC_FREQ_LABEL + key);
+                    if (null == label) {
+                        label = cp5.addLabel(UI_OSC_FREQ_LABEL + key);
+                    }
+                    label.setPosition(currentX + ui_sys_margin, currentY)
+                            .setSize(ui_sys_labelWidth, ui_sys_controlHeight)
+                            .setText("frequency");
+                    currentX += ui_sys_labelWidth + ui_sys_margin;
+
+                    Textfield value = cp5.get(Textfield.class, UI_OSC_FREQ_VAL + key);
+                    if (null == value) {
+                        value = cp5.addTextfield(UI_OSC_FREQ_VAL + key);
+                    }
+                    value.setPosition(currentX + ui_sys_margin, currentY)
+                            .setSize(ui_sys_textFieldWidth, ui_sys_controlHeight)
+                            .setText(String.valueOf(ui_oscillators.get(key).getFrequency()))
+                            .setFont(arial14);
+                    currentX += ui_sys_margin + ui_sys_textFieldWidth;
+
+                    currentY += ui_sys_margin + ui_sys_controlHeight;
 
 
+                }
             }
         }
-
     }
 
     @Override
@@ -370,22 +432,62 @@ public class Passageways extends PApplet implements ControlListener {
             // turn off group's visibility on toggle
             Controller c = controlEvent.getController();
             if (c instanceof Toggle && c.getName().startsWith(UI_TOGGLE)) {
-                setGroupVisibility(Optional.of(ui_controlGroups.get(c.getName() + "-true")),
-                        ((Toggle) c).getBooleanValue());
-                setGroupVisibility(Optional.of(ui_controlGroups.get(c.getName() + "-false")),
-                        ! ((Toggle) c).getBooleanValue());
-
+                String varName = c.getName().substring(UI_TOGGLE.length());
+                setGroupVisibility(Optional.of(ui_controlGroups.get(varName + "-true")), ((Toggle) c).getBooleanValue());
+                setGroupVisibility(Optional.of(ui_controlGroups.get(varName + "-false")), ! ((Toggle) c).getBooleanValue());
+                oncePerFrameMethods.remove(varName);
             } else if (controlEvent.getController() instanceof ScrollableList) {
                 if ( c.getName().startsWith(UI_OSCIL_SELECTOR)) {
                     if (! ((ScrollableList)c).getItem((int)c.getValue()).get("name").equals(NEW_OSCILLATOR) ) {
                         // this is honestly the best way I have found to get this :-/
-                        Oscillator o = ui_oscillators.get(((ScrollableList) c).getItem((int) c.getValue()).get("name"));
-                        if ( null != o ) {
+                        Oscillator oscillator = ui_oscillators.get(((ScrollableList) c).getItem((int) c.getValue()).get("name"));
+                        if ( null != oscillator ) {
+                            // this means a variable is being requested to associate with an oscillator
+                            Passageways parent = this;
+
+                            String variableName = c.getName().substring(UI_OSCIL_SELECTOR.length());
+                            Callable<Optional<List<StateEngine.StateChange>>> varSetterCallable
+                                    = new Callable<Optional<List<StateEngine.StateChange>>>() {
+
+                                ValueSetter.ValueSetterHelper helper = (o,f) -> {
+
+                                    //float low = cp5.get(UI_VAL_FROM + variableName).getValue();
+                                    float low = Float.valueOf(((Textfield)cp5.get(UI_VAL_FROM + variableName)).getText());
+                                    float high = Float.valueOf(((Textfield)cp5.get(UI_VAL_TO + variableName)).getText());
+
+                                    Float value =  ((high - low) / 2f) + (high - low) * oscillator.getValue();
+                                    System.out.println( "time=" + System.currentTimeMillis() + ", osc value=" + oscillator.getValue());
+                                    try{
+                                        //System.out.println( "before set exitSize = " + exitSize);
+                                        //System.out.println( "setting value to " + value.toString());
+                                        f.set(o,f.getType().cast(value));
+                                        //System.out.println( "after set exitSize = " + exitSize);
+                                    } catch (IllegalAccessException iaE) {
+                                        f.setAccessible(true);
+                                        try {
+                                            f.set(o,f.getType().cast(value));
+                                        } catch (IllegalAccessException iaE2) {
+                                            System.out.println( "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
+                                            iaE2.printStackTrace();
+                                        }
+                                    }
+
+                                };
+
+                                ValueSetter setter = new ValueSetter(variableName, parent, helper);
+
+                                @Override
+                                public Optional<List<StateEngine.StateChange>> call() throws Exception {
+                                    setter.setValueForVariable();
+                                    return Optional.empty();
+                                }
+                            };
+
+                            //stateMap.put(variableName, varSetterCallable);
+                            oncePerFrameMethods.put(variableName, varSetterCallable);
 
                         }
                     } else {
-                        // this means a variable is being requested to associate with an oscillator
-                        String variableName = c.getName().substring(UI_OSCIL_SELECTOR.length());
 
                     }
                 }
